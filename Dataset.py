@@ -1,15 +1,23 @@
 import numpy as np
+# from Utility import Parameters
 class DataSet(object):
     def __init__(self,
                  path,
-                 period=25,
-                 n_cl=12,
+                 parameters=None,
                  seed=None,
                  reload=False,
-                 weighted=True):
+                 weighted=True,
+                 reduced_dataset=True,
+                 labtab=None):
         import scipy.io as sio
         from tensorflow.python.framework import random_seed
-        self.path = path
+        n_cl = parameters.n_cl
+        period = parameters.period
+        self.src_path = path
+        if reduced_dataset:
+            path += '_reduced'
+        self.processed_path = path + '_preprocess.mat'
+        self.extended_path = path + '_blocks_' + str(period)+ '.mat'
         self._weighted = weighted
         seed1, seed2 = random_seed.get_seed(seed)
         np.random.seed(seed1 if seed is None else seed2)
@@ -17,14 +25,17 @@ class DataSet(object):
         self._index_in_epoch = 0
         if not reload:
             try:
-                l = sio.loadmat (path + '_' + str (period) + '_backup_extended.mat')
+                l = sio.loadmat (self.extended_path)
             except FileNotFoundError:
                 reload = True
         if not reload:
             self._images = l['im']
             self._labels = l['lab'][0]
             self._data_set_idx = l['idx']
-            self.lab_tab = l['labtab']
+            if str(labtab)=='None':
+                self.lab_tab = l['labtab']
+            else:
+                self.lab_tab = labtab
             self._labels_one_hot = l['labOH']
             self._mixed_labels = l['mixedlab']
             self._mixed_labels_ind = np.where (self._mixed_labels)
@@ -33,10 +44,14 @@ class DataSet(object):
             return None
 
         # load mat file
-        self._images, self._labels, self._data_set_idx = self.load_mat(path, reload_dataset=reload)
+        self._images, self._labels, self._data_set_idx = self.load_mat(reload_dataset=reload,
+                                                                       reduced_dataset=reduced_dataset)
         if len(self._data_set_idx.shape)>1:
             self._data_set_idx = self._data_set_idx[0]
-        self.lab_tab = np.unique (self._labels)
+        if str (labtab) == 'None':
+            self.lab_tab = np.unique (self._labels)
+        else:
+            self.lab_tab = labtab
         self._num_examples = self._images.shape[0]
         self._labels_one_hot = np.zeros ((self._num_examples, np.max((len (self.lab_tab),n_cl))))
         labels = np.zeros(self._labels.shape,dtype=np.int64)
@@ -71,9 +86,9 @@ class DataSet(object):
                 FFT=FFT[1:] # take the DC component out
                 assert(len(FFT)==period)
                 fft_mod = np.reshape(abs(FFT),(period,1))
-                fft_energy = np.sqrt(np.sum(fft_mod**2))
-                if fft_energy>0:
-                    fft_mod = fft_mod / np.sqrt(np.sum(fft_mod**2))
+                fft_amplitude = np.sqrt(np.sum(fft_mod**2))
+                if fft_amplitude>0:
+                    fft_mod = fft_mod / fft_amplitude
                 fft_phase = (np.reshape(np.angle(FFT),(period,1))+np.pi)/2/np.pi
                 n_blocks = np.array([6, 3, 2])
                 n_el_per_block = period // n_blocks
@@ -100,12 +115,90 @@ class DataSet(object):
         self._mixed_labels_n = len(self._mixed_labels_ind)
         self._num_examples = self._images.shape[0]
 
-        sio.savemat(path+ '_' + str (period) + '_backup_extended.mat',{'im':self._images,
+        sio.savemat(self.extended_path,{'im':self._images,
                                                  'lab':self._labels,
                                                  'idx':self._data_set_idx,
                                                  'labtab':self.lab_tab,
                                                  'labOH':self._labels_one_hot,
                                                  'mixedlab':self._mixed_labels})
+
+    def load_mat(self, reload_dataset=False, reduced_dataset=True):
+        import scipy.io as sio
+        if not reload_dataset:
+            try:
+                data_set = sio.loadmat (self.processed_path)
+            except FileNotFoundError:
+                print('Creating preprocessed dataset')
+                reload_dataset = True
+        if not reload_dataset:
+            return data_set['data'], data_set['labels'], data_set['data_set_idx']
+        # returns [body_acc,global_acc,body_omega,module_acc]
+        data_set = sio.loadmat (self.src_path)
+        data = []
+        labels = []
+        data_set_idx = []
+        index = 0
+        for k in data_set.keys():
+            cur_set = data_set[k]
+            if type (cur_set) is np.ndarray:
+                activity = cur_set[0, 2]
+                changes = cur_set[0, 3]
+                signal = cur_set[0, 0]
+                attitude = cur_set[0, 1]
+                for i in range (activity.shape[1]):
+                    inf = changes[0, 2*i]
+                    sup = changes[0, 2*i + 1]
+                    for j in range(inf, sup):
+                        d_cosine_matrix = np.reshape (attitude[j, 1:], (3, 3)).T
+                        body_acc = signal[j, 1:4]
+                        # compute the acceleration in global coordinates
+                        global_acc = np.matmul(d_cosine_matrix, np.transpose(body_acc)).T
+                        body_omega = signal[j, 5:8]
+                        # normalize angular velocity
+                        body_omega = body_omega / (np.sqrt(np.sum(body_omega**2))+1e-8)
+                        # compute the module of the acceleration
+                        module_acc = np.sqrt(np.sum(body_acc**2))
+                        # normalize acceleration
+                        body_acc = body_acc / module_acc
+                        global_acc = global_acc / module_acc
+                        data.append(np.hstack((body_acc,global_acc,body_omega,module_acc)))
+                        # grouping of transient states
+                        if reduced_dataset:
+                            if activity[0, i][0] in ['TRANSDW', 'TRANSUP', 'TRNSACC', 'TRNSDCC', 'JUMPING', 'FALLING']:
+                                labels.append ('TRANSAC')
+                            else:
+                                labels.append (activity[0, i][0])
+                        else:
+                            labels.append (activity[0, i][0])
+                        data_set_idx.append(index)
+            index += 1
+        data = np.array(data)
+        labels = np.array(labels)
+        data_set_idx = np.array(data_set_idx)
+        acc_modules = data[:,-1]
+        # m = np.mean(acc_modules)
+        # dev = np.sqrt(np.var(acc_modules))
+        # acc2 = (acc_modules-m)/2/dev
+        delta_acc = np.max(acc_modules)-np.min(acc_modules)
+        acc_modules = (acc_modules-np.min(acc_modules))/delta_acc
+        data[:, -1] = acc_modules
+        sio.savemat(self.processed_path,{'data':data,'labels':labels, 'data_set_idx':data_set_idx})
+        return data, labels, data_set_idx
+
+    @property
+    def weights(self):
+        w = {}
+        k = 1
+        for i in range (self.n_cl):
+            if self._weighted:
+                freq = float(len(np.where (self.y[:, i])[0])) / self.num_examples
+                if freq>0:
+                    w.update ({i: k/freq})
+                else:
+                    w.update ({i: 0})
+            else:
+                w.update ({i: 1})
+        return w
 
     @property
     def x(self):
@@ -140,21 +233,6 @@ class DataSet(object):
     @property
     def n_cl(self):
         return self._labels_one_hot.shape[1]
-
-    @property
-    def weights(self):
-        w = {}
-        k = 1
-        for i in range (self.n_cl):
-            if self._weighted:
-                freq = float(len(np.where (self.y[:, i])[0])) / self.num_examples
-                if freq>0:
-                    w.update ({i: k/freq})
-                else:
-                    w.update ({i: 0})
-            else:
-                w.update ({i: 1})
-        return w
 
     def shuffle_idx(self, batch_size):
         shuffled_idx_dict = {}
@@ -256,61 +334,3 @@ class DataSet(object):
             end = self._index_in_epoch
             return self._images[start:end], self._labels[start:end]
 
-    def load_mat(self, path, reload_dataset=False, redued_dataset=True):
-        import scipy.io as sio
-        if not reload_dataset:
-            try:
-                data_set = sio.loadmat (path + '_backup.mat')
-            except FileNotFoundError:
-                reload_dataset = True
-        if not reload_dataset:
-            return data_set['data'], data_set['labels'], data_set['data_set_idx']
-        # returns [body_acc,global_acc,body_omega,module_acc]
-        data_set = sio.loadmat (path)
-        data = []
-        labels = []
-        data_set_idx = []
-        index = 0
-        for k in data_set.keys():
-            cur_set = data_set[k]
-            if type (cur_set) is np.ndarray:
-                activity = cur_set[0, 2]
-                changes = cur_set[0, 3]
-                signal = cur_set[0, 0]
-                attitude = cur_set[0, 1]
-                for i in range (activity.shape[1]):
-                    inf = changes[0, 2*i]
-                    sup = changes[0, 2*i + 1]
-                    for j in range(inf, sup):
-                        d_cosine_matrix = np.reshape (attitude[j, 1:], (3, 3)).T
-                        body_acc = signal[j, 1:4]
-                        # compute the acceleration in global coordinates
-                        global_acc = np.matmul(d_cosine_matrix, np.transpose(body_acc)).T
-                        body_omega = signal[j, 5:8]
-                        # normalize angular velocity
-                        body_omega = body_omega / (np.sqrt(np.sum(body_omega**2))+1e-8)
-                        # compute the module of the acceleration
-                        module_acc = np.sqrt(np.sum(body_acc**2))
-                        # normalize acceleration
-                        body_acc = body_acc / module_acc
-                        global_acc = global_acc / module_acc
-                        data.append(np.hstack((body_acc,global_acc,body_omega,module_acc)))
-                        # grouping of transient states
-                        if redued_dataset:
-                            if activity[0, i][0] in ['TRANSDW', 'TRANSUP', 'TRNSACC', 'TRNSDCC', 'JUMPING', 'FALLING']:
-                                labels.append ('TRANSAC')
-                            else:
-                                labels.append (activity[0, i][0])
-                        else:
-                            labels.append (activity[0, i][0])
-                        data_set_idx.append(index)
-            index += 1
-        data = np.array(data)
-        labels = np.array(labels)
-        data_set_idx = np.array(data_set_idx)
-        acc_modules = data[:,-1]
-        # delta_acc = np.max(acc_modules)-np.min(acc_modules)
-        # acc_modules = (acc_modules-np.min(acc_modules))/delta_acc
-        data[:, -1] = acc_modules
-        sio.savemat(path+'_backup.mat',{'data':data,'labels':labels, 'data_set_idx':data_set_idx})
-        return data, labels, data_set_idx

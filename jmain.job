@@ -7,7 +7,7 @@
 #$ -m ea
 
 # setup my personal/shared project folder
-MY_DIR=/nfsd/hda/prosperolo/HDACostaProspero
+MY_DIR=/nfsd/hda/prosperolo/hda
 
 # make my folder the current directory
 cd $MY_DIR

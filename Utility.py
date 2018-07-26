@@ -93,6 +93,20 @@ def get_hist_csv(h):
         csv += format_str.format(*row)
     return csv, csv_tab
 
+def create_dirs():
+    import os
+    from os import path
+    if not os.path.exists('txt'):
+        os.mkdir('txt')
+    if not os.path.exists('mat'):
+        os.mkdir('mat')
+    if not os.path.exists('img'):
+        os.mkdir('img')
+    if not os.path.exists('models_backup'):
+        os.mkdir('models_backup')
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+
 def save_results(parameters,
                  commento,
                  nn_summary,
@@ -101,6 +115,7 @@ def save_results(parameters,
                  hist,
                  datestr,
                  n_cl=6,
+                 cm=None,
                  model_path=None,
                  log_path=None,
                  git=True,
@@ -127,12 +142,12 @@ def save_results(parameters,
     labels_vs_true = np.hstack ((np.reshape (y_pred, (l, 1)), np.reshape (y_true, (l, 1))))
 
     # writing to txt file everything
-    out1_name = commento+'_{}.txt'.format(parameters)
+    out1_name = commento+'.txt'
     out1 = open('txt/'+out1_name, "w")
     out1.write(str(nn_summary))
-    out1.write('\n!~!\n')
+    out1.write('\n-----\n')
     out1.write (str(cl_rep))
-    out1.write ('\n!~!\n')
+    out1.write ('\n\n-----\n\n')
     out1.write(csv_hist+'\n')
     out1.write('predicted_class,true_class\n')
     for i in range(labels_vs_true.shape[0]):
@@ -154,6 +169,7 @@ def save_results(parameters,
                       'commento': commento,
                       'nn_summary': nn_summary,
                       'datestr': datestr,
+                      'confusion_matrix':cm,
                       'log_path': log_path})
     mat_name = commento+'.mat'
     sio.savemat('mat/'+mat_name, mat_file)
@@ -173,7 +189,7 @@ def save_results(parameters,
                    ' txt/'+out2_name+' mat/'+mat_name+'\n')
         if model:
             out4.write('git add '+model_path+'\n')
-        out4.write('git commit -m "output '+commento+'..params:'+parameters+'"\n')
+        out4.write('git commit -m "output '+commento+'"\n')
         out4.write('git push\n')
         print('git pushed')
 

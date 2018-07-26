@@ -15,8 +15,7 @@ Windows settings:
 - pip3 install --upgrade tensorflow
 - pip install keras
 - pip install pydot
-- python -m pip install pydot-ng
-- python -m pip install graphviz
+- pip install pydot-ng
 - //conda install keras
 - //conda update --all
 - //python -m pip install tensorflow
