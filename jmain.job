@@ -1,0 +1,23 @@
+#!/bin/bash
+
+#genera gli ouyput nei files o e e
+#$ -cwd -m ea 
+
+#ricevi mail quando il file.job termina
+#$ -m ea
+
+# setup my personal/shared project folder
+MY_DIR=/nfsd/hda/prosperolo/HDACostaProspero
+
+# make my folder the current directory
+cd $MY_DIR
+
+# setup python3 environment for machine learning computations 
+source /nfsd/opt/anaconda3/anaconda3.sh 
+conda activate /nfsd/opt/anaconda3/tensorflow
+
+# run code
+python3 main.py
+
+# deactivate environment at the end of the job
+conda deactivate

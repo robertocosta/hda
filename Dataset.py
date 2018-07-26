@@ -33,7 +33,7 @@ class DataSet(object):
             return None
 
         # load mat file
-        self._images, self._labels, self._data_set_idx = self.load_mat(path, reload_dataset=False)
+        self._images, self._labels, self._data_set_idx = self.load_mat(path, reload_dataset=reload)
         if len(self._data_set_idx.shape)>1:
             self._data_set_idx = self._data_set_idx[0]
         self.lab_tab = np.unique (self._labels)
@@ -59,8 +59,8 @@ class DataSet(object):
         for i in range(period//2,self._num_examples-period//2):
             from_ind = i-period//2
             to_ind = i+period//2
-            # if period % 2 > 0:
-            #     to_ind += 1
+            if period % 2 > 0:
+                to_ind += 1
             data_set_idx = self._data_set_idx[from_ind:to_ind]
             # add the block only if the dataset is from the same person
             if len(np.unique(data_set_idx))==1:
@@ -71,20 +71,22 @@ class DataSet(object):
                 FFT=FFT[1:] # take the DC component out
                 assert(len(FFT)==period)
                 fft_mod = np.reshape(abs(FFT),(period,1))
-                fft_mod = fft_mod / np.sqrt(np.sum(fft_mod**2))
+                fft_energy = np.sqrt(np.sum(fft_mod**2))
+                if fft_energy>0:
+                    fft_mod = fft_mod / np.sqrt(np.sum(fft_mod**2))
                 fft_phase = (np.reshape(np.angle(FFT),(period,1))+np.pi)/2/np.pi
-                # n_blocks = np.array([6, 3, 2])
-                # n_el_per_block = period // n_blocks
-                # fft_filt = np.zeros ((len(FFT),len(n_blocks)))
-                # for j, el in enumerate(zip(n_blocks,n_el_per_block)):
-                #     (block_n, el_per_block) = el
-                #     for k in range(block_n):
-                #         from_ind = el_per_block * k
-                #         to_ind = from_ind + el_per_block
-                #         if k==block_n-1: # if it is the last block
-                #             to_ind = len(FFT)
-                #         fft_filt[from_ind:to_ind,j] = np.mean(fft_mod[from_ind:to_ind])
-                data_set.append(np.hstack((data,fft_phase,fft_mod)))
+                n_blocks = np.array([6, 3, 2])
+                n_el_per_block = period // n_blocks
+                fft_filt = np.zeros ((len(FFT),len(n_blocks)))
+                for j, el in enumerate(zip(n_blocks,n_el_per_block)):
+                    (block_n, el_per_block) = el
+                    for k in range(block_n):
+                        from_ind = el_per_block * k
+                        to_ind = from_ind + el_per_block
+                        if k==block_n-1: # if it is the last block
+                            to_ind = len(FFT)
+                        fft_filt[from_ind:to_ind,j] = np.mean(fft_mod[from_ind:to_ind])
+                data_set.append(np.hstack((data,fft_phase,fft_mod,fft_filt)))
                 labels.append(self._labels[i])
                 labels_one_hot.append(self._labels_one_hot[i,:])
                 # transient_blocks is True iff in that period there is more than one activity
@@ -142,11 +144,12 @@ class DataSet(object):
     @property
     def weights(self):
         w = {}
+        k = 1
         for i in range (self.n_cl):
             if self._weighted:
                 freq = float(len(np.where (self.y[:, i])[0])) / self.num_examples
                 if freq>0:
-                    w.update ({i: 1/freq})
+                    w.update ({i: k/freq})
                 else:
                     w.update ({i: 0})
             else:
@@ -208,13 +211,13 @@ class DataSet(object):
 
     def next_batch(self, batch_size, shuffle=True):
         start = self._index_in_epoch
-        firs_labels = [1,3]
-        first_batches_n = 5
+        # firs_labels = []
+        # first_batches_n = 5
         # Shuffle for the first epoch
         if self._epochs_completed == 0 and start == 0 and shuffle:
             self.shuffle_idx(batch_size)
             # putting running (0) and transac (3) in the first positions
-            shuffle_idx_semi_ordered (self, firs_labels, batch_size*first_batches_n)
+            # shuffle_idx_semi_ordered (self, firs_labels, batch_size*first_batches_n)
             # shuffled_idx = {}
             # self._shuffled_idx = shuffled_idx
             # # giving mixed labels to the algorithm firstly
@@ -239,7 +242,7 @@ class DataSet(object):
             # Shuffle the data
             if shuffle:
                 self.shuffle_idx (batch_size)
-                shuffle_idx_semi_ordered (self, first_labels, batch_size * first_batches_n)
+                # shuffle_idx_semi_ordered (self, first_labels, batch_size * first_batches_n)
             # Start next epoch
             start = 0
             self._index_in_epoch = batch_size - rest_num_examples

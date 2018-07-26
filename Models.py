@@ -142,15 +142,16 @@ class MLModel (object):
         n_dense = self.n_dense
         input_shape = [self.x_tr[0].shape[0], self.x_tr[0].shape[1], 1]
         input_img = Input (shape=input_shape)
-        x = Conv2D (kernel_size = (3,3), filters = n_filters, activation='relu', input_shape=input_shape) (input_img)
-        x = MaxPooling2D (pool_size=(2, 2), strides=(2, 2)) (x)
+        x = Conv2D (kernel_size = (3,3), strides=(2,2), padding='same', filters = n_filters, activation='relu', input_shape=input_shape) (input_img)
         # x = Conv2D (filters = n_filters, kernel_size = (2,2), activation='relu') (x)
 
-        # x = Dropout (0.2) (x)
+        x = Dropout (0.3) (x)
+        x = Conv2D (filters=n_filters*2, kernel_size=(3, 3), padding='same', activation='relu') (x)
+        x = Dropout (0.3) (x)
 
         x = Flatten () (x)
-        x = Dense (n_dense, activation='relu') (x)
-        x = Dropout (0.2) (x)
+        # x = Dense (n_dense, activation='relu') (x)
+        # x = Dropout (0.2) (x)
         x = Dense (self.n_classes, activation='softmax') (x)
 
         model = Model(input_img, x)
