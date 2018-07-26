@@ -7,7 +7,7 @@ from datetime import datetime
 import numpy as np
 import socket
 import matplotlib.pyplot as plt
-if 'dei' in socket.gethostname ():
+if 'dei' in socket.gethostname () or 'floydhub' in socket.gethostname():
     local_machine = False
 else:
     local_machine = True

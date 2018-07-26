@@ -145,12 +145,18 @@ class MLModel (object):
         x = Conv2D (
             kernel_size = (3,3),
             # strides=(2,2),
-            #  padding='same',
+            padding='same',
             filters = n_filters,
             activation='relu',
             input_shape=input_shape) (input_img)
         x = Conv2D (
             kernel_size = (2,2),
+            padding='same',
+            filters=n_filters,
+            activation='relu') (x)
+        x = Conv2D (
+            kernel_size = (2,2),
+            padding='same',
             filters=n_filters,
             activation='relu') (x)
 
